@@ -9,45 +9,7 @@ This repository contains implementations of fundamental algorithms and technique
 - **Cellular Manufacturing** - Machine-part grouping and cell formation
 - **Industrial Logistics** - Distribution, scheduling, and optimization
 
-## Programs Included
 
-### 1. Direct Clustering Algorithm (DCA)
-**File**: `dca.py` with supporting functions in `main.py`
-
-The Direct Clustering Algorithm is used to form manufacturing cells by clustering parts and machines based on their relationships. This algorithm helps identify which parts should be produced together and which machines should be grouped into cells.
-
-**Usage**:
-```bash
-python dca.py
-```
-
-**Input**: `part.machine.csv` - A binary matrix where rows represent parts and columns represent machines. Entry (i,j) = 1 if part i requires machine j.
-
-**Output**: A sorted matrix that reveals the block-diagonal structure, helping identify manufacturing cells and potential conflicts.
-
-### 2. Kinematic Similarity (KS)
-**File**: `ks.py`
-
-Implements kinematic similarity methods for analyzing part and machine relationships based on their manufacturing requirements.
-
-### 3. K-Means Clustering
-**File**: `kmeans.py`
-
-Standard k-means clustering implementation for grouping parts or machines based on similarity metrics.
-
-### 4. Triangular Distribution
-**File**: `triangular_distribution.py`
-
-Utility for working with triangular probability distributions, commonly used in logistics and project management (PERT analysis).
-
-### 5. Middle-Square Random Number Generator
-**File**: `mid_sq.py`
-
-Classic random number generation method useful for simulations in logistics and facilities planning.
-
-## Data Files
-
-- **`part.machine.csv`** - Binary incidence matrix representing part-machine relationships used by DCA and related algorithms
 
 ## Requirements
 
@@ -62,10 +24,6 @@ Classic random number generation method useful for simulations in logistics and 
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # On macOS/Linux
-   ```
-3. Install dependencies:
-   ```bash
-   pip install pandas numpy
    ```
 
 ## Usage Examples
@@ -98,14 +56,12 @@ These tools can be adapted for:
 These programs support the theoretical concepts covered in the course and provide practical implementations for solving real-world industrial engineering problems.
 
 ## Notes
-
-- All implementations follow industrial engineering standards and textbook algorithms
-- Use these as starting points for more complex, real-world applications
+- Use these as starting points for more complex applications
 - Modify data inputs and parameters to suit specific project requirements
 
 ## License
 
-Educational use - Course materials for ISYE 6960
+Educational use 
 
 ---
 
