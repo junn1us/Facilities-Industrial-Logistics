@@ -1,0 +1,152 @@
+---
+title: "Order Profiling Report"
+author: "Junning Sun"
+date: "2026-03-09"
+output: word_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readxl)
+```
+
+## General Set Up
+The analytical dataset comprises 10290 order-line observations and five operational variables: order number, part number, qty shipped, product type, and pieces carton. Initial data preparation standardized column names and ensured consistent variable typing for downstream profiling. Preliminary inspection indicates that the dataset is structured at the order-line level, allowing aggregation both by SKU and by order.
+
+```{r}
+# load and prepare the data
+order_data <- read_excel(
+  "Order_Profiling_Data.xls.xlsx",
+  sheet = "Order Data",
+  col_types = c("numeric", "text", "numeric", "text", "numeric")
+)
+
+# clean up column names (remove spaces)
+order_data <- order_data |>
+  rename(
+    OrderNumber  = `Order Number`,
+    PartNumber   = `Part Number`,
+    QtyShipped   = `Qty Shipped`,
+    ProductType  = `Product Type`,
+    PiecesCarton = `Pieces per Carton`
+  )
+
+# explore
+# structure and preview
+glimpse(order_data)
+head(order_data)
+nrow(order_data)
+```
+
+## Profile 1
+
+The demand profile exhibits a strongly concentrated SKU-demand relationship. Ranking SKUs by shipped quantity and computing cumulative demand shows that 577 SKUs are sufficient to account for 80% of total shipped volume, representing only 16.90% of all active SKUs (577 of 3,415). This concentration pattern is consistent with a high-skew inventory environment in which a limited subset of items drives most throughput. Operationally, this supports differentiated slotting and replenishment policies, with high-activity SKUs prioritized for forward pick locations to reduce travel and improve pick productivity.
+
+```{r}
+# profile 1: demand profile (aka item activity profile)
+
+# 1)total shipped per SKU, ranked high to low
+demand_profile <- order_data |>
+  group_by(PartNumber) |>
+  summarize(TotalQty = sum(QtyShipped, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(TotalQty)) |>
+  mutate(
+    SKU_Rank     = row_number(),
+    CumQty       = cumsum(TotalQty),
+    PctTotalSKUs = SKU_Rank / n(),
+    PctTotalQty  = CumQty / sum(TotalQty)
+  )
+```
+
+## Profile 2
+Order complexity, measured as lines per order, is right-skewed with a substantial mass at low line counts. Single-line orders account for 30.1% of all orders, followed by two-line orders (13.6%), three-line orders (9.3%), and four-line orders (8.9%), with 43 observed line-count categories overall. The distribution indicates that most orders are relatively simple, while a long tail of higher-line orders remains operationally relevant. This suggests value in dual-process picking logic, separating fast handling of low-line orders from dedicated workflows for complex, high-line orders.
+```{r}
+# profile 2: lines-per-order profile
+
+# count lines in each order
+lines_per_order <- order_data |>
+  group_by(OrderNumber) |>
+  summarize(LinesPerOrder = n(), .groups = "drop")
+
+# convert to distribution
+# x = lines per order, y = % of orders
+lines_profile <- lines_per_order |>
+  count(LinesPerOrder, name = "NumOrders") |>
+  arrange(LinesPerOrder) |>
+  mutate(PctOrders = NumOrders / sum(NumOrders))
+
+ggplot(lines_profile, aes(x = factor(LinesPerOrder), y = PctOrders)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Lines per Order Profile",
+    x = "Lines per Order",
+    y = "Percent of Orders"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()
+```
+## Profile 3
+The item-family profile indicates that Shirts dominate order incidence, appearing in 93.4% of orders. Secondary families include Outerwear (13.9%), Slacks (10.0%), and Neckwear (8.51%), with lower incidence for Footwear, Jewelry, and Belts. Because orders may contain multiple families, family-level percentages are non-mutually exclusive and therefore do not sum to 100%. The profile implies that family-based zoning should be anchored around Shirts, while preserving adjacency or coordinated pick paths for frequently co-occurring secondary families.
+```{r}
+# profile 3: item family profile
+# each order can include a product family at most once in this table
+order_family <- order_data |>
+  distinct(OrderNumber, ProductType)
+
+item_family_profile <- order_family |>
+  count(ProductType, name = "NumOrders") |>
+  mutate(PctOrders = NumOrders / n_distinct(order_data$OrderNumber)) |>
+  arrange(desc(PctOrders))
+
+ggplot(item_family_profile,
+       aes(x = reorder(ProductType, -PctOrders), y = PctOrders)) + geom_col(fill = "orange") +
+  labs(title = "Item Family Profile", x = "Product Type", y = "Percent of Orders") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()
+```
+## Profile 4
+The unit-load profile is highly concentrated in low fill levels: 95.2% of order lines fall in the 1–25% carton-fill range, with only small shares in higher ranges (e.g., 3.08% in 26–50%, 0.155% at exactly 100%, and <1% above 100% combined). This indicates a predominance of partial-carton picks, characteristic of piece-picking environments rather than full-case fulfillment. From a systems perspective, this supports investment in high-efficiency small-quantity picking methods (e.g., batch/cluster picking, optimized pick-face replenishment) and careful management of handling overhead associated with low unit-load extraction.
+```{r}
+# profile 4: unit load profile
+
+# unit load percent by line = qty shipped / pieces per carton
+unit_load_lines <- order_data |>
+  mutate(UnitLoadPct = QtyShipped / PiecesCarton) |>
+  mutate(
+    UnitLoadBin = case_when(
+      UnitLoadPct <= 0 ~ "0%",
+      UnitLoadPct <= 0.25 ~ "1-25%",
+      UnitLoadPct <= 0.50 ~ "26-50%",
+      UnitLoadPct <= 0.75 ~ "51-75%",
+      UnitLoadPct < 1 ~ "76-99%",
+      UnitLoadPct == 1 ~ "100%",
+      UnitLoadPct <= 2 ~ "101-200%",
+      TRUE ~ ">200%"
+    )
+  )
+
+unit_load_profile <- unit_load_lines |>
+  count(UnitLoadBin, name = "NumLines") |>
+  mutate(PctLines = NumLines / sum(NumLines)) |>
+  mutate(UnitLoadBin = factor(
+    UnitLoadBin,
+    levels = c("0%", "1-25%", "26-50%", "51-75%", "76-99%", "100%", "101-200%", ">200%")
+  )) |>
+  arrange(UnitLoadBin)
+
+ggplot(unit_load_profile, aes(x = UnitLoadBin, y = PctLines)) +
+  geom_col(fill = "green") +
+  labs(
+    title = "Unit Load Profile",
+    x = "Percent of Unit Load",
+    y = "Percent of Lines"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal()
+
+# summary tables
+lines_profile
+item_family_profile
+unit_load_profile
+```
